@@ -66,19 +66,19 @@ export class APIClient {
         },
         body: data ? JSON.stringify(data) : undefined,
       });
-
+  
       return await this.handleResponse(response);
     } catch (error) {
       if (error instanceof APIError) {
         throw error;
       }
-
+  
       if (retries > 0) {
         logger.warn(`Request failed, retrying... (${retries} attempts left)`);
         await this.delay(this.retryConfig.delayMs);
         return this.request(method, endpoint, data, retries - 1);
       }
-
+  
       logger.error('Network request failed after retries', error);
       throw new NetworkError(
         error instanceof Error ? error.message : 'Failed to connect to API'

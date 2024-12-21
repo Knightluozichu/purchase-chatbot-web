@@ -46,26 +46,26 @@ export class APIClient {
           },
           body: data ? JSON.stringify(data) : undefined,
         });
-
+  
         return await this.handleResponse<T>(response);
       } catch (error) {
         if (error instanceof APIError) {
           throw error;
         }
-
+  
         if (remainingRetries > 0) {
           logger.warn(`Request failed, retrying... (${remainingRetries} attempts left)`);
           await this.delay(this.config.retryConfig.delayMs);
           return attemptRequest(remainingRetries - 1);
         }
-
+  
         logger.error('Network request failed after retries', error);
         throw new NetworkError(
           error instanceof Error ? error.message : 'Failed to connect to API'
         );
       }
     };
-
+  
     return attemptRequest(retries ?? this.config.retryConfig.maxRetries);
   }
 }
