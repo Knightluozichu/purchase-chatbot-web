@@ -24,6 +24,7 @@ export function AuthModal({ isOpen, onClose, onLogin, onRegister, error, loading
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    console.log('Form submitted in', isLoginMode ? 'login' : 'register', 'mode');
     if (isLoginMode) {
       await onLogin({ email: formData.email, password: formData.password });
     } else {
