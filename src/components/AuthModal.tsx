@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
 import { LoginFormData, RegisterFormData } from '../types/auth';
+import { useNotification } from './Notification';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -19,16 +20,30 @@ export function AuthModal({ isOpen, onClose, onLogin, onRegister, error, loading
     name: '',
     confirmPassword: '',
   });
+  const { showNotification } = useNotification();
+
+  useEffect(() => {
+    if (error) {
+      showNotification({ type: 'error', message: error });
+    }
+  }, [error, showNotification]);
 
   if (!isOpen) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('Form submitted in', isLoginMode ? 'login' : 'register', 'mode');
-    if (isLoginMode) {
-      await onLogin({ email: formData.email, password: formData.password });
-    } else {
-      await onRegister(formData);
+    try {
+      if (isLoginMode) {
+        await onLogin({ email: formData.email, password: formData.password });
+        showNotification({ type: 'success', message: 'Login successful!' });
+        onClose();
+      } else {
+        await onRegister(formData);
+        showNotification({ type: 'success', message: 'Registration successful!' });
+        onClose();
+      }
+    } catch (err) {
+      // Error is handled by the useAuth hook and shown via the error prop
     }
   };
 
@@ -37,7 +52,7 @@ export function AuthModal({ isOpen, onClose, onLogin, onRegister, error, loading
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
       <div className="bg-white rounded-lg max-w-md w-full p-6 relative">
         <button
           onClick={onClose}
@@ -49,12 +64,6 @@ export function AuthModal({ isOpen, onClose, onLogin, onRegister, error, loading
         <h2 className="text-2xl font-bold mb-6">
           {isLoginMode ? 'Login' : 'Register'}
         </h2>
-
-        {error && (
-          <div className="mb-4 p-2 bg-red-100 text-red-700 rounded">
-            {error}
-          </div>
-        )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {!isLoginMode && (

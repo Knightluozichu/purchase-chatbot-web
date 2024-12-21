@@ -1,10 +1,15 @@
-import { useState } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Chat, Message } from '../types';
 import { generateChatId, generateChatName } from '../utils/chat';
+import { useLLM } from './useLLM';
+import { logger } from '../utils/logger';
+import { useNotification } from '../components/Notification';
+import { useChatMessages } from './useChatMessages';
+import { useAPIStatus } from './useAPIStatus';
 
 const INITIAL_MESSAGE: Message = {
   id: '1',
-  content: 'Hello! I\'m your procurement assistant. How can I help you today?',
+  content: "Hello! I'm your procurement assistant. Please note that I'm currently in offline mode since the API server isn't running. To use the full features, please start the API server.",
   role: 'assistant',
   timestamp: new Date(),
 };
@@ -17,13 +22,17 @@ export function useChat() {
     messages: [INITIAL_MESSAGE],
     createdAt: new Date()
   }]);
-  const [isTyping, setIsTyping] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  
+  const { isTyping, handleMessage } = useChatMessages();
+  const { isOffline } = useAPIStatus();
+  const { currentModel, switchModel, queryLLM } = useLLM();
+  const { showNotification } = useNotification();
 
   const currentChat = chats.find(chat => chat.id === currentChatId);
   const messages = currentChat?.messages || [];
 
-  const handleNewChat = () => {
+  const handleNewChat = useCallback(() => {
     const newChatId = generateChatId();
     setChats(prev => [...prev, {
       id: newChatId,
@@ -32,65 +41,49 @@ export function useChat() {
       createdAt: new Date()
     }]);
     setCurrentChatId(newChatId);
-  };
+  }, []);
 
-  const handleSendMessage = async (content: string, files?: File[]) => {
-    const userMessage: Message = {
-      id: Date.now().toString(),
+  const handleSendMessage = useCallback(async (content: string, files?: File[]) => {
+    if (!content.trim() && (!files || files.length === 0)) return;
+
+    const { updatedChats, error } = await handleMessage({
       content,
-      role: 'user',
-      timestamp: new Date(),
-      files: files?.map(file => file.name),
-    };
+      files,
+      chats,
+      currentChatId,
+      isOffline,
+      queryLLM
+    });
 
-    setChats(prev => prev.map(chat => {
-      if (chat.id === currentChatId) {
-        const updatedMessages = [...chat.messages, userMessage];
-        return {
-          ...chat,
-          messages: updatedMessages,
-          name: chat.messages.length === 1 ? generateChatName([userMessage]) : chat.name
-        };
-      }
-      return chat;
-    }));
-    
-    setIsTyping(true);
-    setTimeout(() => {
-      const botMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        content: `I understand your procurement needs. ${
-          files ? `I see you've uploaded: ${files.map(f => f.name).join(', ')}. ` : ''
-        }Let me help you with that.`,
-        role: 'assistant',
-        timestamp: new Date(),
-      };
-      
-      setChats(prev => prev.map(chat => 
-        chat.id === currentChatId 
-          ? { ...chat, messages: [...chat.messages, botMessage] }
-          : chat
-      ));
-      setIsTyping(false);
-    }, 1000);
-  };
+    if (error) {
+      showNotification({
+        type: 'error',
+        message: error
+      });
+    }
 
-  const handleDeleteChat = (chatId: string) => {
+    setChats(updatedChats);
+  }, [currentChatId, handleMessage, chats, isOffline, queryLLM, showNotification]);
+
+  const handleDeleteChat = useCallback((chatId: string) => {
     setChats(prev => prev.filter(chat => chat.id !== chatId));
     if (chatId === currentChatId && chats.length > 1) {
       const remainingChats = chats.filter(chat => chat.id !== chatId);
       setCurrentChatId(remainingChats[remainingChats.length - 1].id);
     }
-  };
+  }, [chats, currentChatId]);
 
   return {
     currentChatId,
+    currentModel,
     chats,
     messages,
     isTyping,
     showHistory,
+    isOffline,
     setCurrentChatId,
     setShowHistory,
+    switchModel,
     handleNewChat,
     handleSendMessage,
     handleDeleteChat,

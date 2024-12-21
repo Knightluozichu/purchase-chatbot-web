@@ -1,31 +1,57 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { User, LoginFormData, RegisterFormData } from '../types/auth';
+import { supabase } from '../lib/supabase';
 
 export function useAuth() {
   const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Check active sessions and sets the user
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        setUser({
+          id: session.user.id,
+          email: session.user.email!,
+          name: session.user.user_metadata.name || ''
+        });
+      }
+      setLoading(false);
+    });
+
+    // Listen for changes on auth state (sign in, sign out, etc.)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (session?.user) {
+        setUser({
+          id: session.user.id,
+          email: session.user.email!,
+          name: session.user.user_metadata.name || ''
+        });
+      } else {
+        setUser(null);
+      }
+      setLoading(false);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
 
   const login = async (data: LoginFormData) => {
     try {
       setLoading(true);
       setError(null);
-      console.log('Login data being sent:', data);
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      });
       
-      if (!response.ok) {
-        throw new Error('Invalid credentials');
-      }
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: data.email,
+        password: data.password,
+      });
 
-      const userData = await response.json();
-      setUser(userData);
+      if (signInError) {
+        throw signInError;
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed');
-      console.error('Login error:', err);
     } finally {
       setLoading(false);
     }
@@ -35,53 +61,42 @@ export function useAuth() {
     try {
       setLoading(true);
       setError(null);
-      console.log('Registration data being sent:', data);
       
       if (data.password !== data.confirmPassword) {
         throw new Error('Passwords do not match');
       }
 
-      const response = await fetch('/api/auth/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
+      const { error: signUpError } = await supabase.auth.signUp({
+        email: data.email,
+        password: data.password,
+        options: {
+          data: {
+            name: data.name,
+          },
+        },
       });
 
-      if (!response.ok) {
-        const errorData = await response.text();
-        throw new Error(errorData || 'Registration failed');
+      if (signUpError) {
+        throw signUpError;
       }
-
-      const userData = await response.json();
-      setUser(userData);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Registration failed');
-      console.error('Registration error:', err);
-      await logRegistrationErrorToSupabase(err);
     } finally {
       setLoading(false);
     }
   };
 
-  const logout = () => {
-    setUser(null);
-  };
-
-  const logRegistrationErrorToSupabase = async (error: any) => {
+  const logout = async () => {
     try {
-      console.log('Logging registration error to Supabase:', error.message);
-      const response = await fetch('/api/logRegistrationError', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ error: error.message }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Failed to log error to Supabase:', errorText);
+      setLoading(true);
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        throw error;
       }
-    } catch (logError) {
-      console.error('Error logging to Supabase:', logError);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Logout failed');
+    } finally {
+      setLoading(false);
     }
   };
 

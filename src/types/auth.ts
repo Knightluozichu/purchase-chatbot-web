@@ -13,8 +13,3 @@ export interface RegisterFormData extends LoginFormData {
   name: string;
   confirmPassword: string;
 }
-
-export interface RegistrationError {
-  message: string;
-  timestamp: Date;
-}

@@ -6,6 +6,7 @@ import { HistoryList } from './components/HistoryList';
 import { AuthModal } from './components/AuthModal';
 import { useChat } from './hooks/useChat';
 import { useAuth } from './hooks/useAuth';
+import { useLLM } from './hooks/useLLM';
 
 export default function App() {
   const {
@@ -14,6 +15,7 @@ export default function App() {
     messages,
     isTyping,
     showHistory,
+    isOffline,
     setCurrentChatId,
     setShowHistory,
     handleNewChat,
@@ -30,6 +32,8 @@ export default function App() {
     logout,
   } = useAuth();
 
+  const { currentModel, switchModel, setApiKey } = useLLM();
+
   const [showAuthModal, setShowAuthModal] = useState(false);
 
   return (
@@ -41,6 +45,10 @@ export default function App() {
         user={user}
         onAuthClick={() => setShowAuthModal(true)}
         onLogout={logout}
+        currentModel={currentModel}
+        onModelChange={switchModel}
+        onApiKeyChange={setApiKey}
+        isOffline={isOffline}
       />
       
       <div className="flex flex-1 overflow-hidden">
