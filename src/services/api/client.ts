@@ -25,7 +25,7 @@ export class APIClient {
   private async handleResponse<T>(response: Response): Promise<T> {
     if (!response.ok) {
       const errorData = await response.json().catch(() => null);
-      logger.error('API request failed', { status: response.status, errorData });
+      logger.warn('API request failed', { status: response.status, errorData });
       throw new APIError(
         errorData?.detail || 'Request failed',
         response.status,
@@ -53,15 +53,16 @@ export class APIClient {
           throw error;
         }
   
-        if (remainingRetries > 0) {
+        if (remainingRetries > 0 && !(error instanceof TypeError)) {
           logger.warn(`Request failed, retrying... (${remainingRetries} attempts left)`);
           await this.delay(this.config.retryConfig.delayMs);
           return attemptRequest(remainingRetries - 1);
         }
   
-        logger.error('Network request failed after retries', error);
+        // Log as warning instead of error for expected offline state
+        logger.warn('Network request failed', error);
         throw new NetworkError(
-          error instanceof Error ? error.message : 'Failed to connect to API'
+          'Unable to connect to API server. Please ensure the server is running.'
         );
       }
     };

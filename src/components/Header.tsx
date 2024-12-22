@@ -3,7 +3,7 @@ import { MessageSquare, Plus, History, LogOut, User, WifiOff } from 'lucide-reac
 import { User as UserType } from '../types/auth';
 import { ModelSelector } from './ModelSelector';
 import { ApiKeyInput } from './ApiKeyInput';
-import { ModelType } from '../types/llm';
+import { ModelType } from '../types/model';
 
 interface HeaderProps {
   onNewChat: () => void;
@@ -34,18 +34,25 @@ export function Header({
     <header className="flex items-center justify-between px-6 py-4 bg-white border-b">
       <div className="flex items-center gap-2">
         <MessageSquare className="w-8 h-8 text-blue-500" />
-        <h1 className="text-xl font-semibold text-gray-800">Procurement Assistant</h1>
+        <h1 className="text-xl font-semibold text-gray-800">Chat Assistant</h1>
         {isOffline && (
           <div className="flex items-center gap-1 px-2 py-1 text-sm text-yellow-700 bg-yellow-50 rounded-full">
             <WifiOff size={14} />
-            <span>Offline Mode</span>
+            <span>API Offline</span>
           </div>
         )}
       </div>
       <nav className="flex items-center gap-4">
         <div className="flex items-center gap-4 border-r pr-4 mr-4">
-          <ModelSelector currentModel={currentModel} onModelChange={onModelChange} disabled={isOffline} />
-          <ApiKeyInput onKeyChange={onApiKeyChange} disabled={isOffline} />
+          <ModelSelector 
+            currentModel={currentModel} 
+            onModelChange={onModelChange} 
+            disabled={isOffline} 
+          />
+          <ApiKeyInput 
+            onKeyChange={onApiKeyChange} 
+            disabled={isOffline} 
+          />
         </div>
         <button
           onClick={onNewChat}

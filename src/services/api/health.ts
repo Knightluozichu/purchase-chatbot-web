@@ -7,12 +7,13 @@ export async function checkAPIHealth(): Promise<boolean> {
     const response = await client.request<{ status: string }>({
       method: 'GET',
       endpoint: '/health',
-      data: undefined,
-      retries: undefined
-  });
+      retries: 1 // Only retry once for health checks
+    });
+    
     return response.status === 'ok';
   } catch (error) {
-    logger.error('Health check failed', error);
+    // Log as info instead of error since this is expected when server is not running
+    logger.info('API server is not available');
     return false;
   }
 }

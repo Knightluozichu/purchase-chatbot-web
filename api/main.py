@@ -19,6 +19,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 load_dotenv()
+load_dotenv(".env.local")
+logger.info("key:"+os.getenv("OPENAI_API_KEY"))
 
 app = FastAPI()
 
@@ -38,6 +40,7 @@ async def health_check():
 class ChatRequest(BaseModel):
     question: str
     model: str
+    apiKey: Optional[str] = None
 
 class SourceDocument(BaseModel):
     pageContent: str
@@ -48,6 +51,8 @@ class ChatResponse(BaseModel):
     sourceDocuments: Optional[List[SourceDocument]] = None
 
 OLLAMA_URL = "http://localhost:11434/api/generate"
+OPENAI_URL = "https://api.openai.com/v1/chat/completions"
+ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 
 async def check_ollama_health() -> bool:
     try:
@@ -95,14 +100,92 @@ async def query_ollama(model: str, prompt: str) -> str:
             detail="Failed to connect to Ollama service"
         )
 
+async def query_openai(model: str, prompt: str, api_key: Optional[str] = None) -> str:
+    # Use provided API key or fallback to environment variable
+    logger.info(api_key)
+    # load_dotenv('.env.local')
+    key = api_key if api_key else os.getenv("OPENAI_API_KEY")
+    # print("open ai key:",key)
+    logger.info("open ai key:"+key)
+    
+    if not key:
+        raise HTTPException(
+            status_code=400,
+            detail="OpenAI API key not provided"
+        )
+    
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                OPENAI_URL,
+                headers={"Authorization": f"Bearer {key}"},
+                json={
+                    "model": model,
+                    "messages": [{"role": "user", "content": prompt}]
+                }
+            )
+            
+            if response.status_code != 200:
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail=f"OpenAI request failed: {response.text}"
+                )
+                
+            result = response.json()
+            return result["choices"][0]["message"]["content"]
+            
+    except httpx.RequestError as e:
+        raise HTTPException(
+            status_code=503,
+            detail="Failed to connect to OpenAI service"
+        )
+
+async def query_anthropic(prompt: str, api_key: Optional[str] = None) -> str:
+    # Use provided API key or fallback to environment variable
+    key = api_key or os.getenv("ANTHROPIC_API_KEY")
+    if not key:
+        raise HTTPException(
+            status_code=400,
+            detail="Anthropic API key not provided"
+        )
+    
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                ANTHROPIC_URL,
+                headers={"x-api-key": key},
+                json={
+                    "model": "claude-2",
+                    "messages": [{"role": "user", "content": prompt}]
+                }
+            )
+            
+            if response.status_code != 200:
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail=f"Anthropic request failed: {response.text}"
+                )
+                
+            result = response.json()
+            return result["content"][0]["text"]
+            
+    except httpx.RequestError as e:
+        raise HTTPException(
+            status_code=503,
+            detail="Failed to connect to Anthropic service"
+        )
+
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
     logger.info(f"Received chat request for model: {request.model}")
     try:
         if request.model.startswith("ollama/"):
             response_text = await query_ollama(request.model, request.question)
+        elif request.model.startswith("gpt-"):
+            response_text = await query_openai(request.model, request.question, request.apiKey)
+        elif request.model == "claude-2":
+            response_text = await query_anthropic(request.question, request.apiKey)
         else:
-            logger.error(f"Unsupported model: {request.model}")
             raise HTTPException(
                 status_code=400,
                 detail=f"Model not supported: {request.model}"

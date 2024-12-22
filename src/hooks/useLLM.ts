@@ -1,27 +1,13 @@
 import { useState, useCallback } from 'react';
-import { ModelType, LLMResponse } from '../types/llm';
-import { queryLLM, checkAPIHealth } from '../services/api';
+import { ModelType, LLMResponse } from '../types/model';
 import { useNotification } from '../components/Notification';
 import { logger } from '../utils/logger';
 import { APIError, NetworkError } from '../utils/errors';
+import { useModelSelection } from './useModelSelection';
 
 export function useLLM() {
-  const [currentModel, setCurrentModel] = useState<ModelType>('ollama/llama2');
+  const { currentModel, switchModel, queryModel } = useModelSelection();
   const { showNotification } = useNotification();
-
-  const checkAPIAvailability = useCallback(async () => {
-    try {
-      return await checkAPIHealth();
-    } catch (error) {
-      logger.error('API health check failed', error);
-      return false;
-    }
-  }, []);
-
-  const switchModel = useCallback((model: ModelType) => {
-    logger.info('Switching model', { from: currentModel, to: model });
-    setCurrentModel(model);
-  }, [currentModel]);
 
   const setApiKey = useCallback((key: string) => {
     logger.info('Setting API key');
@@ -31,9 +17,9 @@ export function useLLM() {
   const handleQuery = useCallback(async (question: string): Promise<LLMResponse> => {
     try {
       logger.info('Starting LLM query', { model: currentModel });
-      const response = await queryLLM(question, currentModel);
+      const response = await queryModel(question);
       logger.info('LLM query successful');
-      return response;
+      return { text: response, sourceDocuments: [] };
     } catch (error) {
       let message = 'An unexpected error occurred';
       
@@ -50,13 +36,12 @@ export function useLLM() {
       });
       throw error;
     }
-  }, [currentModel, showNotification]);
+  }, [currentModel, queryModel, showNotification]);
 
   return {
     currentModel,
     switchModel,
     setApiKey,
     queryLLM: handleQuery,
-    checkAPIAvailability,
   };
 }

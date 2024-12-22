@@ -1,28 +1,39 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNotification } from '../components/Notification';
-import { useLLM } from './useLLM';
+import { checkAPIHealth } from '../services/api';
+import { logger } from '../utils/logger';
 
 export function useAPIStatus() {
   const [isOffline, setIsOffline] = useState(true);
-  const { checkAPIAvailability } = useLLM();
   const { showNotification } = useNotification();
 
-  const checkAPI = useCallback(async () => {
-    const isAvailable = await checkAPIAvailability();
-    setIsOffline(!isAvailable);
-    if (!isAvailable) {
-      showNotification({
-        type: 'warning',
-        message: 'API server is not running. Please start the server to enable all features.'
-      });
+  const checkStatus = useCallback(async () => {
+    try {
+      const isAvailable = await checkAPIHealth();
+      setIsOffline(!isAvailable);
+      
+      if (!isAvailable) {
+        logger.info('API server is offline');
+        showNotification({
+          type: 'warning',
+          message: 'API server is not running. Please start the server to enable all features.'
+        });
+      }
+    } catch (error) {
+      setIsOffline(true);
+      logger.warn('Failed to check API status', error);
     }
-  }, [checkAPIAvailability, showNotification]);
+  }, [showNotification]);
 
   useEffect(() => {
-    checkAPI();
-    const interval = setInterval(checkAPI, 30000); // Check every 30 seconds
+    // Initial check
+    checkStatus();
+
+    // Set up polling interval
+    const interval = setInterval(checkStatus, 30000); // Check every 30 seconds
+
     return () => clearInterval(interval);
-  }, [checkAPI]);
+  }, [checkStatus]);
 
   return { isOffline };
 }
