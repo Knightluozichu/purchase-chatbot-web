@@ -11,16 +11,19 @@ export function useModelSelection() {
   const modelManager = ModelManager.getInstance();
   const modelService = ModelService.getInstance();
 
-  // Check model availability when changed
   useEffect(() => {
     const checkAvailability = async () => {
-      const { isHealthy, message } = await modelManager.checkModelAvailability(currentModel);
-      
-      if (!isHealthy && message) {
-        showNotification({
-          type: 'warning',
-          message
-        });
+      try {
+        const { isHealthy, message } = await modelManager.checkModelAvailability(currentModel);
+        
+        if (!isHealthy && message) {
+          showNotification({
+            type: 'warning',
+            message
+          });
+        }
+      } catch (error) {
+        logger.error('Failed to check model availability', error);
       }
     };
 
@@ -63,7 +66,6 @@ export function useModelSelection() {
   return {
     currentModel,
     switchModel,
-    queryModel,
-    requiresApiKey: (modelId: ModelType) => modelManager.requiresApiKey(modelId)
+    queryModel
   };
 }

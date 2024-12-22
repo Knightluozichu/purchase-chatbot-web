@@ -1,26 +1,24 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List
-import httpx
-from dotenv import load_dotenv
-import os
 import logging
 import sys
+from dotenv import load_dotenv
+from models.manager import ModelManager
+from models.providers.base import FileContent
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout)
-    ]
+    handlers=[logging.StreamHandler(sys.stdout)]
 )
 logger = logging.getLogger(__name__)
 
+# Load environment variables
 load_dotenv()
 load_dotenv(".env.local")
-logger.info("key:"+os.getenv("OPENAI_API_KEY"))
 
 app = FastAPI()
 
@@ -32,10 +30,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-@app.get("/health")
-async def health_check():
-    return {"status": "ok"}
 
 class ChatRequest(BaseModel):
     question: str
@@ -50,153 +44,51 @@ class ChatResponse(BaseModel):
     text: str
     sourceDocuments: Optional[List[SourceDocument]] = None
 
-OLLAMA_URL = "http://localhost:11434/api/generate"
-OPENAI_URL = "https://api.openai.com/v1/chat/completions"
-ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
-
-async def check_ollama_health() -> bool:
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(f"{OLLAMA_URL}/health")
-            return response.status_code == 200
-    except:
-        return False
-
-async def query_ollama(model: str, prompt: str) -> str:
-    logger.info(f"Querying Ollama model: {model}")
-    
-    if not await check_ollama_health():
-        raise HTTPException(
-            status_code=503,
-            detail="Ollama service is not available"
-        )
-    
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                OLLAMA_URL,
-                json={
-                    "model": model.replace("ollama/", ""),
-                    "prompt": prompt,
-                    "stream": False
-                }
-            )
-            
-            if response.status_code != 200:
-                logger.error(f"Ollama request failed: {response.status_code}")
-                raise HTTPException(
-                    status_code=response.status_code,
-                    detail=f"Failed to query Ollama: {response.text}"
-                )
-                
-            result = response.json()
-            logger.info("Ollama query successful")
-            return result["response"]
-            
-    except httpx.RequestError as e:
-        logger.error(f"Network error querying Ollama: {str(e)}")
-        raise HTTPException(
-            status_code=503,
-            detail="Failed to connect to Ollama service"
-        )
-
-async def query_openai(model: str, prompt: str, api_key: Optional[str] = None) -> str:
-    # Use provided API key or fallback to environment variable
-    logger.info(api_key)
-    # load_dotenv('.env.local')
-    key = api_key if api_key else os.getenv("OPENAI_API_KEY")
-    # print("open ai key:",key)
-    logger.info("open ai key:"+key)
-    
-    if not key:
-        raise HTTPException(
-            status_code=400,
-            detail="OpenAI API key not provided"
-        )
-    
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                OPENAI_URL,
-                headers={"Authorization": f"Bearer {key}"},
-                json={
-                    "model": model,
-                    "messages": [{"role": "user", "content": prompt}]
-                }
-            )
-            
-            if response.status_code != 200:
-                raise HTTPException(
-                    status_code=response.status_code,
-                    detail=f"OpenAI request failed: {response.text}"
-                )
-                
-            result = response.json()
-            return result["choices"][0]["message"]["content"]
-            
-    except httpx.RequestError as e:
-        raise HTTPException(
-            status_code=503,
-            detail="Failed to connect to OpenAI service"
-        )
-
-async def query_anthropic(prompt: str, api_key: Optional[str] = None) -> str:
-    # Use provided API key or fallback to environment variable
-    key = api_key or os.getenv("ANTHROPIC_API_KEY")
-    if not key:
-        raise HTTPException(
-            status_code=400,
-            detail="Anthropic API key not provided"
-        )
-    
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                ANTHROPIC_URL,
-                headers={"x-api-key": key},
-                json={
-                    "model": "claude-2",
-                    "messages": [{"role": "user", "content": prompt}]
-                }
-            )
-            
-            if response.status_code != 200:
-                raise HTTPException(
-                    status_code=response.status_code,
-                    detail=f"Anthropic request failed: {response.text}"
-                )
-                
-            result = response.json()
-            return result["content"][0]["text"]
-            
-    except httpx.RequestError as e:
-        raise HTTPException(
-            status_code=503,
-            detail="Failed to connect to Anthropic service"
-        )
+@app.get("/health")
+async def health_check():
+    return {"status": "ok"}
 
 @app.post("/api/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest):
-    logger.info(f"Received chat request for model: {request.model}")
+async def chat(
+    question: str = Form(...),
+    model: str = Form(...),
+    apiKey: Optional[str] = Form(None),
+    files: List[UploadFile] = File(None)
+):
+    logger.debug(f"Received request: {question}")
+    logger.info(f"Received chat request for model: {model}")
+    
     try:
-        if request.model.startswith("ollama/"):
-            response_text = await query_ollama(request.model, request.question)
-        elif request.model.startswith("gpt-"):
-            response_text = await query_openai(request.model, request.question, request.apiKey)
-        elif request.model == "claude-2":
-            response_text = await query_anthropic(request.question, request.apiKey)
-        else:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Model not supported: {request.model}"
-            )
+        provider = ModelManager.get_provider(model, apiKey)
+        
+        # Process files if provided
+        context = []
+        if files:
+            file_contents = []
+            for file in files:
+                content = await file.read()
+                file_contents.append(FileContent(
+                    content=content,
+                    mime_type=file.content_type or "application/octet-stream",
+                    metadata={"filename": file.filename}
+                ))
+            
+            if apiKey:
+                context = await ModelManager.process_files(file_contents, apiKey)
+        
+        # Create messages with context
+        messages = ModelManager.create_messages(question, context)
+        
+        # Generate response
+        response_text = await provider.generate_response(messages)
 
         return ChatResponse(
             text=response_text,
-            sourceDocuments=[]
+            sourceDocuments=[SourceDocument(pageContent=ctx, metadata={}) for ctx in context]
         )
-    except HTTPException:
-        raise
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Unexpected error in chat endpoint: {str(e)}", exc_info=True)
         raise HTTPException(
