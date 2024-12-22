@@ -3,6 +3,7 @@ import { Chat, Message } from '../types';
 import { generateChatId, generateChatName } from '../utils/chat';
 import { useLLM } from './useLLM';
 import { logger } from '../utils/logger';
+import { debug } from '../utils/debug';
 import { useNotification } from '../components/Notification';
 import { useChatMessages } from './useChatMessages';
 import { useAPIStatus } from './useAPIStatus';
@@ -14,14 +15,20 @@ const INITIAL_MESSAGE: Message = {
   timestamp: new Date(),
 };
 
-export function useChat() {
-  const [currentChatId, setCurrentChatId] = useState(generateChatId());
-  const [chats, setChats] = useState<Chat[]>([{
-    id: currentChatId,
+const createInitialChat = () => {
+  const id = generateChatId();
+  return {
+    id,
     name: 'New Chat',
     messages: [INITIAL_MESSAGE],
     createdAt: new Date()
-  }]);
+  };
+};
+
+export function useChat() {
+  const initialChat = createInitialChat();
+  const [currentChatId, setCurrentChatId] = useState<string>(initialChat.id);
+  const [chats, setChats] = useState<Chat[]>([initialChat]);
   const [showHistory, setShowHistory] = useState(false);
   
   const { isTyping, handleMessage } = useChatMessages();
@@ -42,21 +49,21 @@ export function useChat() {
   }, [isOffline, showNotification]);
 
   const handleNewChat = useCallback(() => {
-    const newChatId = generateChatId();
-    setChats(prev => [...prev, {
-      id: newChatId,
-      name: 'New Chat',
-      messages: [INITIAL_MESSAGE],
-      createdAt: new Date()
-    }]);
-    setCurrentChatId(newChatId);
+    const newChat = createInitialChat();
+    setChats(prev => [...prev, newChat]);
+    setCurrentChatId(newChat.id);
   }, []);
 
-// Update handleSendMessage to correctly handle file uploads
   const handleSendMessage = useCallback(async (content: string, files?: File[]) => {
     if (!content.trim() && (!files || files.length === 0)) return;
     
     try {
+      debug.logMessage({
+        content,
+        files,
+        timestamp: new Date().toISOString()
+      });
+
       const userMessage: Message = {
         id: generateChatId(),
         content,
@@ -65,7 +72,6 @@ export function useChat() {
         files: files?.map(file => file.name),
       };
     
-      // Update chats with user message
       setChats(prev => prev.map(chat => {
         if (chat.id === currentChatId) {
           const updatedMessages = [...chat.messages, userMessage];
@@ -86,10 +92,21 @@ export function useChat() {
         return;
       }
     
-      // Get response from LLM
-      const response = await queryLLM(content);
+      // Create FormData for the request
+      const formData = new FormData();
+      formData.append('question', content);
+      formData.append('model', currentModel);
+      
+      // Append files if present
+      if (files?.length) {
+        files.forEach(file => {
+          formData.append('files', file, file.name);
+        });
+      }
     
-      // Update chats with assistant response
+      // Get response from LLM
+      const response = await queryLLM(content, formData);
+    
       const assistantMessage: Message = {
         id: generateChatId(),
         content: response.text,
@@ -111,7 +128,7 @@ export function useChat() {
         message: error instanceof Error ? error.message : 'Failed to get response'
       });
     }
-  }, [currentChatId, isOffline, queryLLM, showNotification]);
+  }, [currentChatId, isOffline, queryLLM, showNotification, currentModel]);
 
   const handleDeleteChat = useCallback((chatId: string) => {
     setChats(prev => prev.filter(chat => chat.id !== chatId));

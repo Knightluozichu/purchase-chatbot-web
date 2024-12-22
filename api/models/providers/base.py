@@ -4,9 +4,12 @@ from langchain_core.messages import BaseMessage
 from pydantic import BaseModel
 
 class FileContent(BaseModel):
-    content: str
+    content: bytes  # Changed from str to bytes
     mime_type: str
     metadata: dict
+
+    class Config:
+        arbitrary_types_allowed = True  # Allow bytes type
 
 @dataclass
 class ModelConfig:

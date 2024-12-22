@@ -1,15 +1,15 @@
-import { LLMResponse, ModelType } from '../../types/model';
-import { APIClient } from './client';
+import { ModelType, LLMResponse } from '../../types/model';
 import { checkAPIHealth } from './health';
 import { logger } from '../../utils/logger';
+import { APIClient } from './client';
 import { LLMError } from '../../utils/errors';
 import { ModelManager } from '../model/modelManager';
-import { buildChatRequest } from './request/chatRequest';
 
-export async function queryLLM(question: string, model: ModelType): Promise<LLMResponse> {
-  logger.info('Querying LLM', { question, model });
+export async function queryLLM(question: string, formData?: FormData): Promise<LLMResponse> {
+  logger.info('Querying LLM', { question });
 
   const modelManager = ModelManager.getInstance();
+  const model = formData?.get('model') as ModelType;
   const modelConfig = modelManager.getModelConfig(model);
 
   if (!modelConfig) {
@@ -17,9 +17,14 @@ export async function queryLLM(question: string, model: ModelType): Promise<LLMR
   }
 
   // Check if API key is required and present
-  const apiKey = !modelConfig.isLocal ? localStorage.getItem('llm_api_key') : undefined;
-  if (!modelConfig.isLocal && !apiKey) {
-    throw new LLMError('API key is required for cloud models');
+  if (!modelConfig.isLocal) {
+    const apiKey = localStorage.getItem('llm_api_key');
+    if (!apiKey) {
+      throw new LLMError('API key is required for cloud models');
+    }
+    if (formData) {
+      formData.append('apiKey', apiKey);
+    }
   }
 
   // Check API health
@@ -30,7 +35,14 @@ export async function queryLLM(question: string, model: ModelType): Promise<LLMR
 
   try {
     const client = APIClient.getInstance();
-    const formData = buildChatRequest(question, model, apiKey);
+    
+    // If no FormData provided, create minimal request
+    if (!formData) {
+      const minimalFormData = new FormData();
+      minimalFormData.append('question', question);
+      minimalFormData.append('model', model);
+      formData = minimalFormData;
+    }
 
     const response = await client.request<LLMResponse>({
       method: 'POST',
@@ -39,10 +51,10 @@ export async function queryLLM(question: string, model: ModelType): Promise<LLMR
       isFormData: true
     });
 
-    logger.info('LLM query successful', { model });
+    logger.info('LLM query successful');
     return response;
   } catch (error) {
-    logger.error('LLM query failed', { error, model });
+    logger.error('LLM query failed', error);
     throw error;
   }
 }

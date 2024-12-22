@@ -1,8 +1,8 @@
 import httpx
-from typing import Optional
+from typing import Optional, List
 from fastapi import HTTPException
 from langchain_core.messages import BaseMessage
-from .base import LLMProvider, ModelConfig
+from .base import LLMProvider, ModelConfig, FileContent
 
 class OllamaProvider(LLMProvider):
     OLLAMA_URL = "http://localhost:11434/api/generate"
@@ -10,7 +10,11 @@ class OllamaProvider(LLMProvider):
     def __init__(self, config: ModelConfig):
         self.model_name = config.name.replace("ollama/", "")
     
-    async def generate_response(self, messages: list[BaseMessage]) -> str:
+    async def generate_response(
+        self, 
+        messages: list[BaseMessage],
+        files: Optional[List[FileContent]] = None
+    ) -> str:
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(

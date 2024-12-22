@@ -52,10 +52,23 @@ export class ModelService {
     }
 
     try {
+      const formData = new FormData();
+      formData.append('question', question);
+      formData.append('model', modelId);
+      
+      // Add API key for cloud models
+      if (!isLocal) {
+        const apiKey = localStorage.getItem('llm_api_key');
+        if (apiKey) {
+          formData.append('apiKey', apiKey);
+        }
+      }
+
       const response = await this.apiClient.request<LLMResponse>({
         method: 'POST',
         endpoint: '/api/chat',
-        data: { question, model: modelId }
+        data: formData,
+        isFormData: true
       });
 
       return response;

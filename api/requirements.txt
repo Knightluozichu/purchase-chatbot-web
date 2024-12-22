@@ -13,4 +13,5 @@ unstructured
 pdf2image
 tesseract
 docx2txt
+python-docx
 pypdf

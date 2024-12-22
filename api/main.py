@@ -1,20 +1,11 @@
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from typing import Optional, List
-import logging
-import sys
+from routes import api_router
+from utils.logging_config import configure_logging
 from dotenv import load_dotenv
-from models.manager import ModelManager
-from models.providers.base import FileContent
 
-# Configure logging
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler(sys.stdout)]
-)
-logger = logging.getLogger(__name__)
+# Configure logging first
+configure_logging()
 
 # Load environment variables
 load_dotenv()
@@ -31,91 +22,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-class ChatRequest(BaseModel):
-    question: str
-    model: str
-    apiKey: Optional[str] = None
-    files: Optional[List[UploadFile]] = None
+# Include API routes
+app.include_router(api_router)
 
-class SourceDocument(BaseModel):
-    pageContent: str
-    metadata: dict
-
-class ChatResponse(BaseModel):
-    text: str
-    sourceDocuments: Optional[List[SourceDocument]] = None
-
+# Add health check endpoint at root level
 @app.get("/health")
 async def health_check():
+    """Health check endpoint to verify API service status"""
     return {"status": "ok"}
-
-@app.post("/api/upload")
-async def upload_files(
-    files: List[UploadFile] = File(...),
-    apiKey: str = Form(...)
-):
-    try:
-        file_contents = []
-        for file in files:
-            content = await file.read()
-            file_contents.append(FileContent(
-                content=content,
-                mime_type=file.content_type,
-                metadata={"filename": file.filename}
-            ))
-        
-        context = await ModelManager.process_files(file_contents, apiKey)
-        return {"message": "Files processed successfully", "context": context}
-    except Exception as e:
-        logger.error(f"Error processing files: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/api/chat", response_model=ChatResponse)
-async def chat(
-    question: str = Form(...),
-    model: str = Form(...),
-    apiKey: Optional[str] = Form(None),
-    files: List[UploadFile] = File([])
-):
-    logger.info(f"接收到 /api/chat 请求，question={question}, model={model}")
-    logger.debug(f"API Key: {apiKey}")
-    logger.debug(f"上传文件列表: {[f.filename for f in files]}")
-    try:
-        # 处理上传的文件
-        file_contents = []
-        if files:
-            for file in files:
-                logger.debug(f"读取文件: {file.filename}, 类型: {file.content_type}")
-                content = await file.read()
-                file_contents.append(FileContent(
-                    content=content,
-                    mime_type=file.content_type,
-                    metadata={"filename": file.filename}
-                ))
-        
-        provider = ModelManager.get_provider(model, apiKey)
-        
-        # 处理文件并获取相关上下文
-        context = None
-        if file_contents:
-            context = await ModelManager.process_files(file_contents, apiKey)
-        
-        # 创建带有上下文的消息
-        messages = ModelManager.create_messages(question, context)
-        
-        # 生成响应
-        response_text = await provider.generate_response(messages, file_contents)
-
-        return ChatResponse(
-            text=response_text,
-            sourceDocuments=[SourceDocument(pageContent=ctx, metadata={}) for ctx in (context or [])]
-        )
-    except HTTPException as http_exc:
-        logger.error(f"HTTP异常: {str(http_exc)}")
-        raise
-    except ValueError as e:
-        logger.error(f"Value error: {str(e)}")
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.error(f"服务端异常 Error in chat endpoint: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))

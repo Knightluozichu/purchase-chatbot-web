@@ -1,6 +1,7 @@
 import { APIConfig, APIRequestOptions } from './types';
 import { defaultConfig } from './config';
 import { logger } from '../../utils/logger';
+import { debug } from '../../utils/debug';
 import { APIError, NetworkError } from '../../utils/errors';
 
 export class APIClient {
@@ -13,7 +14,7 @@ export class APIClient {
 
   static getInstance(config?: APIConfig): APIClient {
     if (!APIClient.instance) {
-      APIClient.instance = new APIClient(config);
+      APIClient.instance = new APIClient(config || defaultConfig);
     }
     return APIClient.instance;
   }
@@ -51,12 +52,8 @@ export class APIClient {
           body: isFormData ? data : (data ? JSON.stringify(data) : undefined),
         };
 
-        logger.debug('Making API request', { 
-          url, 
-          method, 
-          isFormData, 
-          hasBody: !!data 
-        });
+        debug.logAPIRequest(endpoint, isFormData ? 'FormData payload' : data);
+        logger.debug('Making API request', { url, method, isFormData, hasBody: !!data });
 
         const response = await fetch(url, requestOptions);
         return await this.handleResponse<T>(response);
@@ -72,9 +69,7 @@ export class APIClient {
         }
   
         logger.warn('Network request failed', error);
-        throw new NetworkError(
-          'Unable to connect to API server. Please ensure the server is running.'
-        );
+        throw new NetworkError('Unable to connect to API server. Please ensure the server is running.');
       }
     };
   

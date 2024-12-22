@@ -4,22 +4,41 @@ import { useNotification } from '../components/Notification';
 import { logger } from '../utils/logger';
 import { APIError, NetworkError } from '../utils/errors';
 import { useModelSelection } from './useModelSelection';
+import { APIClient } from '../services/api/client';
 
 export function useLLM() {
-  const { currentModel, switchModel, queryModel } = useModelSelection();
+  const { currentModel, switchModel } = useModelSelection();
   const { showNotification } = useNotification();
+  const apiClient = APIClient.getInstance();
 
   const setApiKey = useCallback((key: string) => {
     logger.info('Setting API key');
     localStorage.setItem('llm_api_key', key);
   }, []);
 
-  const handleQuery = useCallback(async (question: string): Promise<LLMResponse> => {
+  const handleQuery = useCallback(async (question: string, formData?: FormData): Promise<LLMResponse> => {
     try {
       logger.info('Starting LLM query', { model: currentModel });
-      const response = await queryModel(question);
+      
+      const data = formData || new FormData();
+      if (!formData) {
+        data.append('question', question);
+        data.append('model', currentModel);
+        const apiKey = localStorage.getItem('llm_api_key');
+        if (apiKey) {
+          data.append('apiKey', apiKey);
+        }
+      }
+
+      const response = await apiClient.request<LLMResponse>({
+        method: 'POST',
+        endpoint: '/api/chat',
+        data,
+        isFormData: true
+      });
+
       logger.info('LLM query successful');
-      return { text: response, sourceDocuments: [] };
+      return response;
     } catch (error) {
       let message = 'An unexpected error occurred';
       
@@ -36,7 +55,7 @@ export function useLLM() {
       });
       throw error;
     }
-  }, [currentModel, queryModel, showNotification]);
+  }, [currentModel, apiClient, showNotification]);
 
   return {
     currentModel,
