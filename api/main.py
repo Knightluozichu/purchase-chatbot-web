@@ -35,6 +35,7 @@ class ChatRequest(BaseModel):
     question: str
     model: str
     apiKey: Optional[str] = None
+    files: Optional[List[UploadFile]] = None
 
 class SourceDocument(BaseModel):
     pageContent: str
@@ -48,50 +49,69 @@ class ChatResponse(BaseModel):
 async def health_check():
     return {"status": "ok"}
 
+@app.post("/api/upload")
+async def upload_files(
+    files: List[UploadFile] = File(...),
+    apiKey: str = Form(...)
+):
+    try:
+        file_contents = []
+        for file in files:
+            content = await file.read()
+            file_contents.append(FileContent(
+                content=content,
+                mime_type=file.content_type,
+                metadata={"filename": file.filename}
+            ))
+        
+        context = await ModelManager.process_files(file_contents, apiKey)
+        return {"message": "Files processed successfully", "context": context}
+    except Exception as e:
+        logger.error(f"Error processing files: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(
     question: str = Form(...),
     model: str = Form(...),
     apiKey: Optional[str] = Form(None),
-    files: List[UploadFile] = File(None)
+    files: List[UploadFile] = File([])
 ):
-    logger.debug(f"Received request: {question}")
-    logger.info(f"Received chat request for model: {model}")
+    logger.debug(f"Received chat request with files: {[f.filename for f in files]}")
     
     try:
-        provider = ModelManager.get_provider(model, apiKey)
-        
-        # Process files if provided
-        context = []
+        # 处理上传的文件
+        file_contents = []
         if files:
-            file_contents = []
             for file in files:
                 content = await file.read()
                 file_contents.append(FileContent(
                     content=content,
-                    mime_type=file.content_type or "application/octet-stream",
+                    mime_type=file.content_type,
                     metadata={"filename": file.filename}
                 ))
-            
-            if apiKey:
-                context = await ModelManager.process_files(file_contents, apiKey)
         
-        # Create messages with context
+        provider = ModelManager.get_provider(model, apiKey)
+        
+        # 处理文件并获取相关上下文
+        context = None
+        if file_contents:
+            context = await ModelManager.process_files(file_contents, apiKey)
+        
+        # 创建带有上下文的消息
         messages = ModelManager.create_messages(question, context)
         
-        # Generate response
-        response_text = await provider.generate_response(messages)
+        # 生成响应
+        response_text = await provider.generate_response(messages, file_contents)
 
         return ChatResponse(
             text=response_text,
-            sourceDocuments=[SourceDocument(pageContent=ctx, metadata={}) for ctx in context]
+            sourceDocuments=[SourceDocument(pageContent=ctx, metadata={}) for ctx in (context or [])]
         )
         
     except ValueError as e:
+        logger.error(f"Value error: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error(f"Unexpected error in chat endpoint: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail=f"Internal server error: {str(e)}"
-        )
+        logger.error(f"Error in chat endpoint: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))

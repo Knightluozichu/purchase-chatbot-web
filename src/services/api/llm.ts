@@ -4,6 +4,7 @@ import { checkAPIHealth } from './health';
 import { logger } from '../../utils/logger';
 import { LLMError } from '../../utils/errors';
 import { ModelManager } from '../model/modelManager';
+import { buildChatRequest } from './request/chatRequest';
 
 export async function queryLLM(question: string, model: ModelType): Promise<LLMResponse> {
   logger.info('Querying LLM', { question, model });
@@ -16,11 +17,9 @@ export async function queryLLM(question: string, model: ModelType): Promise<LLMR
   }
 
   // Check if API key is required and present
-  if (!modelConfig.isLocal) {
-    const apiKey = localStorage.getItem('llm_api_key');
-    if (!apiKey) {
-      throw new LLMError('API key is required for cloud models');
-    }
+  const apiKey = !modelConfig.isLocal ? localStorage.getItem('llm_api_key') : undefined;
+  if (!modelConfig.isLocal && !apiKey) {
+    throw new LLMError('API key is required for cloud models');
   }
 
   // Check API health
@@ -29,24 +28,15 @@ export async function queryLLM(question: string, model: ModelType): Promise<LLMR
     throw new LLMError('API service is not available. Please start the server.');
   }
 
-  // For local models, check Ollama health
-  if (modelConfig.isLocal) {
-    const isOllamaHealthy = await checkOllamaHealth();
-    if (!isOllamaHealthy) {
-      throw new LLMError('Ollama service is not available. Please ensure Ollama is running.');
-    }
-  }
-
   try {
     const client = APIClient.getInstance();
+    const formData = buildChatRequest(question, model, apiKey);
+
     const response = await client.request<LLMResponse>({
       method: 'POST',
       endpoint: '/api/chat',
-      data: { 
-        question, 
-        model,
-        apiKey: !modelConfig.isLocal ? localStorage.getItem('llm_api_key') : undefined
-      },
+      data: formData,
+      isFormData: true
     });
 
     logger.info('LLM query successful', { model });

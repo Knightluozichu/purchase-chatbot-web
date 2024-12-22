@@ -35,18 +35,30 @@ export class APIClient {
     return response.json();
   }
 
-  async request<T>({ method, endpoint, data, retries }: APIRequestOptions): Promise<T> {
+  async request<T>({ method, endpoint, data, retries, isFormData }: APIRequestOptions): Promise<T> {
     const url = new URL(endpoint, this.config.baseUrl).toString();
+    
     const attemptRequest = async (remainingRetries: number): Promise<T> => {
       try {
-        const response = await fetch(url, {
+        const headers: Record<string, string> = {};
+        if (!isFormData) {
+          headers['Content-Type'] = 'application/json';
+        }
+
+        const requestOptions: RequestInit = {
           method,
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: data ? JSON.stringify(data) : undefined,
+          headers,
+          body: isFormData ? data : (data ? JSON.stringify(data) : undefined),
+        };
+
+        logger.debug('Making API request', { 
+          url, 
+          method, 
+          isFormData, 
+          hasBody: !!data 
         });
-  
+
+        const response = await fetch(url, requestOptions);
         return await this.handleResponse<T>(response);
       } catch (error) {
         if (error instanceof APIError) {
@@ -59,7 +71,6 @@ export class APIClient {
           return attemptRequest(remainingRetries - 1);
         }
   
-        // Log as warning instead of error for expected offline state
         logger.warn('Network request failed', error);
         throw new NetworkError(
           'Unable to connect to API server. Please ensure the server is running.'

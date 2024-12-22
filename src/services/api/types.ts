@@ -1,5 +1,3 @@
-import { LLMResponse, ModelType } from '../../types/llm';
-
 export interface APIConfig {
   baseUrl: string;
   retryConfig: RetryConfig;
@@ -15,4 +13,5 @@ export interface APIRequestOptions {
   endpoint: string;
   data?: any;
   retries?: number;
+  isFormData?: boolean; // Add this flag
 }
