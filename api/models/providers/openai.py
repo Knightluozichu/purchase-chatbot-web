@@ -2,6 +2,8 @@ from typing import Optional, List
 from langchain_community.chat_models import ChatOpenAI
 from langchain_core.messages import BaseMessage
 from .base import LLMProvider, ModelConfig, FileContent
+# from langchain.chat_models.openai import ChatOpenAI
+# from langchain_openai import ChatOpenAI
 
 class OpenAIProvider(LLMProvider):
     def __init__(self, config: ModelConfig, api_key: Optional[str]):

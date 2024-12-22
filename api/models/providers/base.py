@@ -4,12 +4,13 @@ from langchain_core.messages import BaseMessage
 from pydantic import BaseModel
 
 class FileContent(BaseModel):
-    content: bytes  # Changed from str to bytes
-    mime_type: str
-    metadata: dict
+    file_name: str            # 新增此字段
+    content: bytes            # 已经存在
+    mime_type: str            # 已经存在
+    metadata: dict            # 已经存在
 
     class Config:
-        arbitrary_types_allowed = True  # Allow bytes type
+        arbitrary_types_allowed = True
 
 @dataclass
 class ModelConfig:

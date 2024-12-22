@@ -23,10 +23,13 @@ async def chat(
             for file in files:
                 logger.debug(f"Reading file: {file.filename}, type: {file.content_type}")
                 content = await file.read()
+                
+                # 关键修改：显式给 FileContent 的 file_name 字段赋值
                 file_contents.append(FileContent(
+                    file_name=file.filename,       # <- 赋值给 file_name
                     content=content,
                     mime_type=file.content_type,
-                    metadata={"filename": file.filename}
+                    metadata={}
                 ))
         
         provider = ModelManager.get_provider(model, apiKey)
@@ -44,7 +47,10 @@ async def chat(
 
         return {
             "text": response_text,
-            "sourceDocuments": [{"pageContent": ctx, "metadata": {}} for ctx in (context or [])]
+            "sourceDocuments": [
+                {"pageContent": ctx, "metadata": {}}
+                for ctx in (context or [])
+            ]
         }
         
     except ValueError as e:
