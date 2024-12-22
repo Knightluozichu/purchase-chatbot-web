@@ -38,3 +38,19 @@ class DocumentProcessor:
             return []
         docs = self.vector_store.similarity_search(query, k=k)
         return [doc.page_content for doc in docs]
+
+    def _get_loader(self, file: FileContent):
+        mime_type, _ = mimetypes.guess_type(file.file_name)
+        if mime_type == "application/pdf":
+            return UnstructuredPDFLoader(file.content)
+        elif mime_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+            return Docx2txtLoader(file.content)
+        elif mime_type and mime_type.startswith("text"):
+            return TextLoader(file.content)
+        elif mime_type and mime_type.startswith("image"):
+            return UnstructuredImageLoader(file.content)
+        return None
+
+    async def _load_and_split(self, loader):
+        documents = await loader.load()
+        return self.text_splitter.split_documents(documents)

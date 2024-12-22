@@ -52,9 +52,10 @@ export function useChat() {
     setCurrentChatId(newChatId);
   }, []);
 
+// Update handleSendMessage to correctly handle file uploads
   const handleSendMessage = useCallback(async (content: string, files?: File[]) => {
     if (!content.trim() && (!files || files.length === 0)) return;
-
+    
     try {
       const userMessage: Message = {
         id: generateChatId(),
@@ -63,7 +64,7 @@ export function useChat() {
         timestamp: new Date(),
         files: files?.map(file => file.name),
       };
-
+    
       // Update chats with user message
       setChats(prev => prev.map(chat => {
         if (chat.id === currentChatId) {
@@ -76,7 +77,7 @@ export function useChat() {
         }
         return chat;
       }));
-
+    
       if (isOffline) {
         showNotification({
           type: 'warning',
@@ -84,10 +85,10 @@ export function useChat() {
         });
         return;
       }
-
+    
       // Get response from LLM
       const response = await queryLLM(content);
-      
+    
       // Update chats with assistant response
       const assistantMessage: Message = {
         id: generateChatId(),
@@ -96,13 +97,13 @@ export function useChat() {
         timestamp: new Date(),
         sourceDocuments: response.sourceDocuments,
       };
-
-      setChats(prev => prev.map(chat => 
-        chat.id === currentChatId 
+    
+      setChats(prev => prev.map(chat =>
+        chat.id === currentChatId
           ? { ...chat, messages: [...chat.messages, assistantMessage] }
           : chat
       ));
-
+    
     } catch (error) {
       logger.error('Error in chat message handling', error);
       showNotification({

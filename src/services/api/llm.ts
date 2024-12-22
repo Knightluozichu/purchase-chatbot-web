@@ -8,10 +8,10 @@ import { buildChatRequest } from './request/chatRequest';
 
 export async function queryLLM(question: string, model: ModelType): Promise<LLMResponse> {
   logger.info('Querying LLM', { question, model });
-  
+
   const modelManager = ModelManager.getInstance();
   const modelConfig = modelManager.getModelConfig(model);
-  
+
   if (!modelConfig) {
     throw new LLMError('Invalid model selected');
   }

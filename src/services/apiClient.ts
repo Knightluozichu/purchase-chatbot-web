@@ -1,27 +1,19 @@
+import { APIConfig, APIRequestOptions } from './api/types';
+import { defaultConfig } from './api/config';
 import { logger } from '../utils/logger';
 import { APIError, NetworkError } from '../utils/errors';
 
-interface RetryConfig {
-  maxRetries: number;
-  delayMs: number;
-}
-
 export class APIClient {
   private static instance: APIClient;
-  private baseUrl: string;
-  private retryConfig: RetryConfig;
+  private config: APIConfig;
 
-  private constructor() {
-    this.baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-    this.retryConfig = {
-      maxRetries: 3,
-      delayMs: 1000,
-    };
+  private constructor(config: APIConfig = defaultConfig) {
+    this.config = config;
   }
 
-  static getInstance(): APIClient {
+  static getInstance(config?: APIConfig): APIClient {
     if (!APIClient.instance) {
-      APIClient.instance = new APIClient();
+      APIClient.instance = new APIClient(config);
     }
     return APIClient.instance;
   }
@@ -30,19 +22,10 @@ export class APIClient {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
 
-  async checkHealth(): Promise<boolean> {
-    try {
-      const response = await fetch(`${this.baseUrl}/health`);
-      return response.ok;
-    } catch {
-      return false;
-    }
-  }
-
-  private async handleResponse(response: Response) {
+  private async handleResponse<T>(response: Response): Promise<T> {
     if (!response.ok) {
       const errorData = await response.json().catch(() => null);
-      logger.error('API request failed', { status: response.status, errorData });
+      logger.warn('API request failed', { status: response.status, errorData });
       throw new APIError(
         errorData?.detail || 'Request failed',
         response.status,
@@ -52,37 +35,49 @@ export class APIClient {
     return response.json();
   }
 
-  async request<T>(
-    method: string,
-    endpoint: string,
-    data?: any,
-    retries = this.retryConfig.maxRetries
-  ): Promise<T> {
-    try {
-      const response = await fetch(`${this.baseUrl}${endpoint}`, {
-        method,
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: data ? JSON.stringify(data) : undefined,
-      });
+  async request<T>({ method, endpoint, data, retries, isFormData }: APIRequestOptions): Promise<T> {
+    const url = new URL(endpoint, this.config.baseUrl).toString();
+    
+    const attemptRequest = async (remainingRetries: number): Promise<T> => {
+      try {
+        const headers: Record<string, string> = {};
+        if (!isFormData) {
+          headers['Content-Type'] = 'application/json';
+        }
+
+        const requestOptions: RequestInit = {
+          method,
+          headers,
+          body: isFormData ? data : (data ? JSON.stringify(data) : undefined),
+        };
+
+        logger.debug('Making API request', { 
+          url, 
+          method, 
+          isFormData, 
+          hasBody: !!data 
+        });
+
+        const response = await fetch(url, requestOptions);
+        return await this.handleResponse<T>(response);
+      } catch (error) {
+        if (error instanceof APIError) {
+          throw error;
+        }
   
-      return await this.handleResponse(response);
-    } catch (error) {
-      if (error instanceof APIError) {
-        throw error;
+        if (remainingRetries > 0 && !(error instanceof TypeError)) {
+          logger.warn(`Request failed, retrying... (${remainingRetries} attempts left)`);
+          await this.delay(this.config.retryConfig.delayMs);
+          return attemptRequest(remainingRetries - 1);
+        }
+  
+        logger.warn('Network request failed', error);
+        throw new NetworkError(
+          'Unable to connect to API server. Please ensure the server is running.'
+        );
       }
+    };
   
-      if (retries > 0) {
-        logger.warn(`Request failed, retrying... (${retries} attempts left)`);
-        await this.delay(this.retryConfig.delayMs);
-        return this.request(method, endpoint, data, retries - 1);
-      }
-  
-      logger.error('Network request failed after retries', error);
-      throw new NetworkError(
-        error instanceof Error ? error.message : 'Failed to connect to API'
-      );
-    }
+    return attemptRequest(retries ?? this.config.retryConfig.maxRetries);
   }
 }
